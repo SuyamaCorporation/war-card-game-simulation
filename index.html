@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>戦争 カードゲーム シミュレーション</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #1a1a2e; }
+  .card { font-size: 2rem; line-height: 1; }
+  .suit-red { color: #ef4444; }
+  .suit-black { color: #1f2937; }
+  .deck-pile { background: linear-gradient(135deg, #2d5a27 0%, #1a3a15 100%); border: 3px solid #4ade80; }
+  .player-area { background: linear-gradient(135deg, #1e3a5f 0%, #0f1f35 100%); border: 2px solid #60a5fa; }
+  .cpu-area { background: linear-gradient(135deg, #5f1e1e 0%, #350f0f 100%); border: 2px solid #f87171; }
+  .played-card { background: white; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+  @keyframes slideDown { from { transform: translateY(-40px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+  @keyframes slideUp { from { transform: translateY(40px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+  .animate-down { animation: slideDown 0.3s ease-out; }
+  .animate-up { animation: slideUp 0.3s ease-out; }
+  .war-flash { animation: warFlash 0.5s ease-in-out; }
+  @keyframes warFlash { 0%,100%{background:#1a1a2e;} 50%{background:#4a1a00;} }
+  .bar { transition: width 0.5s ease; }
+</style>
+</head>
+<body class="min-h-screen text-white font-sans p-4">
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-3xl font-bold text-center mb-2 text-yellow-400">♠ 戦争 カードゲーム ♥</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">War Card Game Simulation</p>
+
+  <!-- Stats Bar -->
+  <div class="bg-gray-800 rounded-xl p-3 mb-4 grid grid-cols-3 gap-2 text-center text-sm">
+    <div><div class="text-blue-400 font-bold text-lg" id="statWins">0</div><div class="text-gray-400">あなたの勝利</div></div>
+    <div><div class="text-yellow-400 font-bold text-lg" id="statTurns">0</div><div class="text-gray-400">ターン数</div></div>
+    <div><div class="text-red-400 font-bold text-lg" id="statCpuWins">0</div><div class="text-gray-400">CPUの勝利</div></div>
+  </div>
+
+  <!-- CPU Area -->
+  <div class="cpu-area rounded-xl p-4 mb-3">
+    <div class="flex justify-between items-center mb-2">
+      <span class="text-red-400 font-bold">🤖 CPU</span>
+      <span class="text-sm text-gray-300">手札: <span id="cpuCount" class="font-bold text-red-300">26</span> 枚</span>
+    </div>
+    <div class="flex justify-center">
+      <div id="cpuCard" class="played-card w-20 h-28 flex items-center justify-center text-3xl font-bold text-gray-300 bg-gray-700" style="border-radius:12px;">
+        <span>🂠</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Battle Area -->
+  <div id="battleMsg" class="text-center text-xl font-bold py-2 text-yellow-300 min-h-8">ゲーム開始を押してください</div>
+
+  <!-- Player Area -->
+  <div class="player-area rounded-xl p-4 mb-3">
+    <div class="flex justify-between items-center mb-2">
+      <span class="text-blue-400 font-bold">👤 あなた</span>
+      <span class="text-sm text-gray-300">手札: <span id="playerCount" class="font-bold text-blue-300">26</span> 枚</span>
+    </div>
+    <div class="flex justify-center">
+      <div id="playerCard" class="played-card w-20 h-28 flex items-center justify-center text-3xl font-bold text-gray-300 bg-gray-700" style="border-radius:12px;">
+        <span>🂠</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="flex gap-2 mb-4">
+    <button id="btnNew" onclick="newGame()" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition" aria-label="新しいゲーム">新ゲーム</button>
+    <button id="btnStep" onclick="stepTurn()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition" aria-label="1ターン進める">1ターン ▶</button>
+    <button id="btnAuto" onclick="toggleAuto()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition" aria-label="全自動実行">全自動 ⚡</button>
+  </div>
+
+  <!-- Win Rate Bar -->
+  <div class="bg-gray-800 rounded-xl p-3 mb-4">
+    <div class="text-sm text-gray-400 mb-1">勝率（累計）</div>
+    <div class="flex rounded-full overflow-hidden h-4" role="progressbar" aria-label="勝率">
+      <div id="barPlayer" class="bar bg-blue-500 h-full" style="width:50%"></div>
+      <div id="barCpu" class="bar bg-red-500 h-full" style="width:50%"></div>
+    </div>
+    <div class="flex justify-between text-xs mt-1">
+      <span class="text-blue-400">あなた <span id="ratePlayer">0%</span></span>
+      <span class="text-red-400">CPU <span id="rateCpu">0%</span></span>
+    </div>
+  </div>
+
+  <!-- War History -->
+  <div class="bg-gray-800 rounded-xl p-3">
+    <div class="text-sm text-gray-400 mb-2">戦争（War）発生履歴</div>
+    <div id="warLog" class="text-xs text-yellow-300 max-h-24 overflow-y-auto space-y-1">
+      <div class="text-gray-500">まだ戦争は発生していません</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const SUITS = ['♠','♥','♦','♣'];
+const SUIT_COLORS = {'♠':'black','♣':'black','♥':'red','♦':'red'};
+
+let playerDeck=[], cpuDeck=[], warPool=[];
+let autoTimer=null, isAutoRunning=false;
+let totalWins=0, totalCpuWins=0, totalGames=0;
+let warLog=[];
+let gameOver=false;
+
+function makeFullDeck(){
+  const d=[];
+  for(const s of SUITS) for(const r of RANKS) d.push({rank:r,suit:s,value:RANKS.indexOf(r)});
+  return d;
+}
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}
+  return arr;
+}
+function cardHTML(card,animate=''){
+  const color=SUIT_COLORS[card.suit]==='red'?'text-red-500':'text-gray-800';
+  return `<div class="w-full h-full flex flex-col items-center justify-center ${color} ${animate}">
+    <div class="text-lg font-black leading-none">${card.rank}</div>
+    <div class="text-2xl leading-none">${card.suit}</div>
+  </div>`;
+}
+function updateUI(){
+  document.getElementById('playerCount').textContent=playerDeck.length;
+  document.getElementById('cpuCount').textContent=cpuDeck.length;
+  document.getElementById('statTurns').textContent=totalTurns;
+}
+let totalTurns=0;
+
+function newGame(){
+  stopAuto();
+  const deck=shuffle(makeFullDeck());
+  playerDeck=deck.slice(0,26);
+  cpuDeck=deck.slice(26);
+  warPool=[];
+  gameOver=false;
+  totalTurns=0;
+  warLog=[];
+  document.getElementById('warLog').innerHTML='<div class="text-gray-500">まだ戦争は発生していません</div>';
+  document.getElementById('playerCard').innerHTML='<span class="text-4xl">🂠</span>';
+  document.getElementById('cpuCard').innerHTML='<span class="text-4xl">🂠</span>';
+  document.getElementById('battleMsg').textContent='1ターンボタンか全自動を押してください';
+  document.getElementById('battleMsg').className='text-center text-xl font-bold py-2 text-yellow-300';
+  updateUI();
+}
+
+function stepTurn(){
+  if(gameOver) return;
+  if(playerDeck.length===0||cpuDeck.length===0){endGame();return;}
+  totalTurns++;
+  const pc=playerDeck.shift();
+  const cc=cpuDeck.shift();
+  document.getElementById('playerCard').innerHTML=cardHTML(pc,'animate-up');
+  document.getElementById('cpuCard').innerHTML=cardHTML(cc,'animate-down');
+  if(pc.value>cc.value){
+    playerDeck.push(pc,cc,...warPool);
+    warPool=[];
+    document.getElementById('battleMsg').textContent=`あなたの勝ち！ (${pc.rank} > ${cc.rank})`;
+    document.getElementById('battleMsg').className='text-center text-xl font-bold py-2 text-blue-400';
+  } else if(cc.value>pc.value){
+    cpuDeck.push(pc,cc,...warPool);
+    warPool=[];
+    document.getElementById('battleMsg').textContent=`CPUの勝ち！ (${cc.rank} > ${pc.rank})`;
+    document.getElementById('battleMsg').className='text-center text-xl font-bold py-2 text-red-400';
+  } else {
+    // War!
+    const warCards=[];
+    for(let i=0;i<3;i++){
+      if(playerDeck.length>0) warCards.push(playerDeck.shift());
+      if(cpuDeck.length>0) warCards.push(cpuDeck.shift());
+    }
+    warPool.push(pc,cc,...warCards);
+    const msg=`⚔️ 戦争発生！ (${pc.rank} = ${cc.rank}) 賭けカード: ${warPool.length}枚`;
+    document.getElementById('battleMsg').textContent=msg;
+    document.getElementById('battleMsg').className='text-center text-xl font-bold py-2 text-yellow-400';
+    warLog.unshift(`T${totalTurns}: ${pc.rank}${pc.suit} vs ${cc.rank}${cc.suit} → ${warPool.length}枚プール`);
+    if(warLog.length>10) warLog.pop();
+    const wl=document.getElementById('warLog');
+    wl.innerHTML=warLog.map(l=>`<div>${l}</div>`).join('');
+  }
+  updateUI();
+  if(playerDeck.length===0||cpuDeck.length===0) endGame();
+}
+
+function endGame(){
+  gameOver=true;
+  stopAuto();
+  let winner;
+  if(playerDeck.length>cpuDeck.length){winner='あなた';totalWins++;}
+  else if(cpuDeck.length>playerDeck.length){winner='CPU';totalCpuWins++;}
+  else{winner='引き分け';}
+  totalGames++;
+  document.getElementById('battleMsg').textContent=`ゲーム終了！ ${winner}の勝利！(${totalTurns}ターン)`;
+  document.getElementById('battleMsg').className='text-center text-xl font-bold py-2 text-yellow-400';
+  document.getElementById('statWins').textContent=totalWins;
+  document.getElementById('statCpuWins').textContent=totalCpuWins;
+  const total=totalWins+totalCpuWins||1;
+  const pr=Math.round(totalWins/total*100);
+  const cr=100-pr;
+  document.getElementById('barPlayer').style.width=pr+'%';
+  document.getElementById('barCpu').style.width=cr+'%';
+  document.getElementById('ratePlayer').textContent=pr+'%';
+  document.getElementById('rateCpu').textContent=cr+'%';
+  saveStats();
+}
+
+function toggleAuto(){
+  if(isAutoRunning){stopAuto();}
+  else{startAuto();}
+}
+function startAuto(){
+  if(gameOver){newGame();}
+  isAutoRunning=true;
+  document.getElementById('btnAuto').textContent='停止 ⏹';
+  document.getElementById('btnAuto').className='flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition';
+  runAuto();
+}
+function runAuto(){
+  if(!isAutoRunning||gameOver){stopAuto();return;}
+  stepTurn();
+  autoTimer=setTimeout(runAuto,80);
+}
+function stopAuto(){
+  isAutoRunning=false;
+  clearTimeout(autoTimer);
+  document.getElementById('btnAuto').textContent='全自動 ⚡';
+  document.getElementById('btnAuto').className='flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition';
+}
+
+function saveStats(){
+  try{localStorage.setItem('war_stats',JSON.stringify({wins:totalWins,cpuWins:totalCpuWins,games:totalGames}));}catch(e){}
+}
+function loadStats(){
+  try{
+    const s=JSON.parse(localStorage.getItem('war_stats')||'{}');
+    totalWins=s.wins||0;totalCpuWins=s.cpuWins||0;totalGames=s.games||0;
+    document.getElementById('statWins').textContent=totalWins;
+    document.getElementById('statCpuWins').textContent=totalCpuWins;
+    const total=totalWins+totalCpuWins||1;
+    const pr=Math.round(totalWins/total*100);
+    document.getElementById('barPlayer').style.width=pr+'%';
+    document.getElementById('barCpu').style.width=(100-pr)+'%';
+    document.getElementById('ratePlayer').textContent=pr+'%';
+    document.getElementById('rateCpu').textContent=(100-pr)+'%';
+  }catch(e){}
+}
+
+loadStats();
+newGame();
+</script>
+</body>
+</html>
